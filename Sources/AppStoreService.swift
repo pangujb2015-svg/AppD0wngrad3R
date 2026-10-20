@@ -207,14 +207,32 @@ enum AppStoreService {
     }
 
     /// Extract human-readable error from ipatool's JSON or text output.
+    ///
+    /// ipatool (zerolog) writes one JSON object per line: an informational
+    /// "preparing authentication" line followed by the actual error result.
+    /// Decoding the whole stream as a single JSON document therefore failed and
+    /// the UI used to show the raw log lines (including the info line in red).
     private static func parseError(_ raw: String) -> String {
-        let cleaned = raw.strippingANSI
-        // Try to parse as JSON and extract "error" field
-        if let data = cleaned.data(using: .utf8),
-           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let error = json["error"] as? String {
-            return error
+        let lines = raw.strippingANSI
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+
+        // Newest entry first: the error is the last structured record.
+        for line in lines.reversed() {
+            guard line.hasPrefix("{"),
+                  let data = line.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else { continue }
+
+            if let error = json["error"] as? String, !error.isEmpty {
+                return error
+            }
+            if let message = json["message"] as? String, !message.isEmpty {
+                return message
+            }
         }
-        return cleaned
+
+        return lines.isEmpty ? raw.strippingANSI : lines.joined(separator: "\n")
     }
 }

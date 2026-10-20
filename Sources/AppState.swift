@@ -163,11 +163,11 @@ class AppState {
         Logger.shared.info("Login started (\(is2FA ? "2FA verification" : "credentials"))")
         status = .loading("Preparing authentication, first login may take a few minutes...")
         do {
-            // Revoke existing session to clear potentially corrupted state
-            if !is2FA {
-                await AppStoreService.revoke()
-            }
-
+            // Deliberately do not revoke the existing session before logging in.
+            // Apple's auth edge intermittently rejects or redirects a login
+            // (HTTP 301/403/204); revoking first turned such a transient failure
+            // into a logout that also lost a previously working session. ipatool
+            // overwrites the stored account on success anyway.
             let result = try await AppStoreService.login(
                 email: email, password: password,
                 authCode: is2FA ? authCode : nil
