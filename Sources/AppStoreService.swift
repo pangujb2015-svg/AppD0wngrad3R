@@ -135,7 +135,7 @@ enum AppStoreService {
 
     static func getVersionMetadata(
         bundleId: String, versionId: String
-    ) async -> String? {
+    ) async -> VersionMetadata? {
         guard let result = try? await Shell.run(
             "ipatool",
             arguments: [
@@ -148,7 +148,24 @@ enum AppStoreService {
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return nil }
 
-        return json["displayVersion"] as? String
+        let displayVersion = (json["displayVersion"] as? String).flatMap {
+            $0.isEmpty ? nil : $0
+        }
+        let releaseDate = (json["releaseDate"] as? String).flatMap(parseReleaseDate)
+        guard displayVersion != nil || releaseDate != nil else { return nil }
+        return VersionMetadata(displayVersion: displayVersion, releaseDate: releaseDate)
+    }
+
+    /// ipatool emits RFC3339 timestamps; unknown dates arrive as the zero time
+    /// (`0001-01-01T00:00:00Z`) and must not be shown as a release date.
+    private static func parseReleaseDate(_ raw: String) -> Date? {
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let plain = ISO8601DateFormatter()
+        guard let date = fractional.date(from: raw) ?? plain.date(from: raw),
+              date.timeIntervalSince1970 > 0
+        else { return nil }
+        return date
     }
 
     static func download(

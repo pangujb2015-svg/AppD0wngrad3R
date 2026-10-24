@@ -104,7 +104,7 @@ struct AppDetailView: View {
                                     .foregroundStyle(.blue)
                             }
                         }
-                        Text("ID: \(version.id)")
+                        Text(version.detailsText)
                             .font(.caption)
                             .foregroundStyle(.tertiary)
                     }

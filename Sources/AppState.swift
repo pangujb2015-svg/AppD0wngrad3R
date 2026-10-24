@@ -281,33 +281,46 @@ class AppState {
         }
     }
 
-    /// Load metadata for a single version on demand (called when row appears)
+    /// Load metadata for a single version on demand (called when row appears).
+    ///
+    /// Costs one `ipatool get-version-metadata` call per version: a signed App Store
+    /// request plus a ranged read of the IPA (~160 KB). Kept lazy and disk-cached.
     func loadMetadataIfNeeded(for versionId: String) async {
-        guard let idx = versions.firstIndex(where: { $0.id == versionId }),
-              !versions[idx].metadataLoaded,
-              let app = selectedApp
+        guard let app = selectedApp,
+              let idx = versions.firstIndex(where: { $0.id == versionId }),
+              !versions[idx].metadataLoaded
         else { return }
+        let bundleId = app.bundleId
 
         // Check disk cache first
-        if let cached = await MetadataCache.shared.get(versionId) {
-            if let idx = versions.firstIndex(where: { $0.id == versionId }) {
-                versions[idx].version = cached
-                versions[idx].metadataLoaded = true
-            }
+        if let cached = await MetadataCache.shared.get(
+            bundleId: bundleId, versionId: versionId
+        ) {
+            apply(metadata: cached, for: versionId, bundleId: bundleId)
             return
         }
 
-        let version = await AppStoreService.getVersionMetadata(
-            bundleId: app.bundleId, versionId: versionId
+        let metadata = await AppStoreService.getVersionMetadata(
+            bundleId: bundleId, versionId: versionId
         )
-        if let idx = versions.firstIndex(where: { $0.id == versionId }) {
-            versions[idx].version = version
-            versions[idx].metadataLoaded = true
-        }
+        apply(metadata: metadata, for: versionId, bundleId: bundleId)
 
-        if let version {
-            await MetadataCache.shared.set(versionId, version: version)
+        if let metadata {
+            await MetadataCache.shared.set(
+                bundleId: bundleId, versionId: versionId, metadata: metadata
+            )
         }
+    }
+
+    private func apply(metadata: VersionMetadata?, for versionId: String, bundleId: String) {
+        // The user may have switched apps while the request was in flight.
+        guard selectedApp?.bundleId == bundleId,
+              let idx = versions.firstIndex(where: { $0.id == versionId })
+        else { return }
+
+        versions[idx].version = metadata?.displayVersion
+        versions[idx].releaseDate = metadata?.releaseDate
+        versions[idx].metadataLoaded = true
     }
 
     func downloadAndInstall() async {

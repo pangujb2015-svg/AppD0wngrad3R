@@ -5,7 +5,9 @@ import Foundation
 actor MetadataCache {
     static let shared = MetadataCache()
 
-    private var cache: [String: String] = [:] // versionId -> displayVersion
+    // "bundleId|externalVersionId" -> metadata. External version IDs are only
+    // unique within one app, so the bundle ID has to be part of the key.
+    private var cache: [String: VersionMetadata] = [:]
 
     private let fileURL: URL
 
@@ -16,19 +18,25 @@ actor MetadataCache {
         let url = cacheDir.appendingPathComponent("version-metadata.json")
         fileURL = url
 
+        // Older builds cached bare version-ID -> display-version pairs. Those keys
+        // are ambiguous, so they are dropped and refetched once.
         if let data = try? Data(contentsOf: url),
-           let decoded = try? JSONDecoder().decode([String: String].self, from: data) {
+           let decoded = try? JSONDecoder().decode([String: VersionMetadata].self, from: data) {
             cache = decoded
         }
     }
 
-    func get(_ versionId: String) -> String? {
-        cache[versionId]
+    func get(bundleId: String, versionId: String) -> VersionMetadata? {
+        cache[Self.key(bundleId: bundleId, versionId: versionId)]
     }
 
-    func set(_ versionId: String, version: String) {
-        cache[versionId] = version
+    func set(bundleId: String, versionId: String, metadata: VersionMetadata) {
+        cache[Self.key(bundleId: bundleId, versionId: versionId)] = metadata
         save()
+    }
+
+    private static func key(bundleId: String, versionId: String) -> String {
+        "\(bundleId)|\(versionId)"
     }
 
     private func save() {
