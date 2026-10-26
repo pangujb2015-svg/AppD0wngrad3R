@@ -1,0 +1,41 @@
+name: Build unsigned app
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'Sources/**'
+      - 'Package.swift'
+      - '.github/workflows/build-unsigned.yml'
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build (Intel + Apple Silicon)
+        run: swift build -c release --arch arm64 --arch x86_64
+
+      - name: Package .app
+        run: |
+          BIN_PATH="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)"
+          APP="AppDowngrader.app"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          cp "$BIN_PATH/AppDowngrader" "$APP/Contents/MacOS/AppDowngrader"
+          cp -R "$BIN_PATH/AppDowngrader_AppDowngrader.bundle" "$APP/Contents/Resources/"
+          cp Sources/AppIcon.png "$APP/Contents/Resources/AppIcon.png"
+          cp Info.plist "$APP/Contents/Info.plist"
+          sed -i '' 's/\$(MARKETING_VERSION)/0.0.9/; s/\$(CURRENT_PROJECT_VERSION)/9/' "$APP/Contents/Info.plist"
+          chmod +x "$APP/Contents/Resources/AppDowngrader_AppDowngrader.bundle/bin/"* || true
+          for f in "$APP/Contents/Resources/AppDowngrader_AppDowngrader.bundle/bin/"*; do
+            codesign --force -s - "$f"
+          done
+          codesign --force --deep -s - "$APP"
+          ditto -c -k --keepParent "$APP" AppDowngrader-unsigned.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AppDowngrader-unsigned
+          path: AppDowngrader-unsigned.zip
